@@ -28,7 +28,7 @@
           <form method="post" action="{{ url_for('wardrobe_remove') }}" class="flex-shrink-0">
             <input type="hidden" name="item_id" value="{{ item.id }}">
             <button class="btn btn-danger btn-sm" type="submit"
-                    onclick="return confirm('Remove this item?')">Remove</button>
+              onclick="return confirm('Remove this item?')">Remove</button>
           </form>
         </div>
         {% endfor %}
@@ -59,16 +59,13 @@
           <option>home</option>
           <option>outdoor</option>
         </select>
-        <input id="filter-search" type="text" placeholder="Search name…"
-               class="search-input-field">
+        <input id="filter-search" type="text" placeholder="Search name…" class="search-input-field">
       </div>
 
       <div id="catalog-list" class="item-grid">
         {% for item in catalog %}
-        <div class="item-row catalog-item"
-             data-cat="{{ item.category }}"
-             data-style="{{ item.style_tag }}"
-             data-name="{{ item.name|lower }}">
+        <div class="item-row catalog-item" data-cat="{{ item.category }}" data-style="{{ item.style_tag }}"
+          data-name="{{ item.name|lower }}">
           <div>
             <span class="item-name">{{ item.name }}</span>
             <div class="item-meta mt-2">
@@ -97,18 +94,18 @@
 
 {% block scripts %}
 <script>
-  const catFilter   = document.getElementById('filter-cat');
+  const catFilter = document.getElementById('filter-cat');
   const styleFilter = document.getElementById('filter-style');
   const searchInput = document.getElementById('filter-search');
 
   function applyFilters() {
-    const cat   = catFilter.value.toLowerCase();
+    const cat = catFilter.value.toLowerCase();
     const style = styleFilter.value.toLowerCase();
-    const q     = searchInput.value.toLowerCase();
+    const q = searchInput.value.toLowerCase();
     document.querySelectorAll('.catalog-item').forEach(el => {
-      const matchCat   = !cat   || el.dataset.cat.toLowerCase()   === cat;
+      const matchCat = !cat || el.dataset.cat.toLowerCase() === cat;
       const matchStyle = !style || el.dataset.style.toLowerCase() === style;
-      const matchName  = !q    || el.dataset.name.includes(q);
+      const matchName = !q || el.dataset.name.includes(q);
       el.style.display = (matchCat && matchStyle && matchName) ? '' : 'none';
     });
   }

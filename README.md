@@ -18,6 +18,7 @@ Nạp danh mục 350+ quần áo và tạo 600+ tương tác mẫu phục vụ c
 ```bash
 python init_db.py
 ```
+Hoặc dùng import qua XAMPP từ file weather_rs.sql
 ### Bước 3: Chạy server
 Khởi chạy server Flask:
 ```bash

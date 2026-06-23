@@ -1,5 +1,5 @@
 ## Giới thiệu
-OutfitRS là một hệ thống gợi ý phối đồ thông minh cá nhân hóa theo ngữ cảnh. Hệ thống tự động phân tích chỉ số cơ thể (BMI), điều kiện thời tiết thực tế (nhiệt độ, độ ẩm, sức gió) và các dịp sự kiện (đi chơi, đi làm, thể thao) để đề xuất bộ trang phục tối ưu nhất bằng cách kết hợp bộ lọc luật cứng sinh học với mô hình Machine Learning và thuật toán Cosine.
+OutfitRS là một hệ thống gợi ý phối đồ thông minh cá nhân hóa theo ngữ cảnh
 ---
 ## Công nghệ sử dụng
 * **Backend**: Python, Flask (Web Server)

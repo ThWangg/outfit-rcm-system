@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Register – OutfitRS{% endblock %}
+
+
+
+{% block content %}
+<div class="auth-wrap">
+  <div class="auth-box">
+    <div class="card">
+      <div class="card-body">
+        <div class="auth-title">Create Account</div>
+        <div class="auth-sub">Your height &amp; weight are used to calculate BMI for thermal adjustments.</div>
+
+        {% if error %}
+        <div class="alert alert-error">{{ error }}</div>
+        {% endif %}
+
+        <form method="post" action="{{ url_for('register') }}">
+          <div class="form-group">
+            <label for="username">Username</label>
+            <input id="username" name="username" type="text"
+                   placeholder="Choose a username" autocomplete="username" required>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="password">Password</label>
+              <input id="password" name="password" type="password"
+                     placeholder="Password" autocomplete="new-password" required>
+            </div>
+            <div class="form-group">
+              <label for="confirm_password">Confirm Password</label>
+              <input id="confirm_password" name="confirm_password" type="password"
+                     placeholder="Confirm" autocomplete="new-password" required>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="height_cm">Height (cm)</label>
+              <input id="height_cm" name="height_cm" type="number"
+                     value="170" min="100" max="250" step="0.1" required>
+            </div>
+            <div class="form-group">
+              <label for="weight_kg">Weight (kg)</label>
+              <input id="weight_kg" name="weight_kg" type="number"
+                     value="65" min="30" max="250" step="0.1" required>
+            </div>
+          </div>
+          <div class="bmi-preview" id="bmi-preview">BMI: —</div>
+          <div class="mt-3">
+            <button type="submit" class="btn btn-primary btn-full">Create Account</button>
+          </div>
+        </form>
+
+        <div class="auth-footer">
+          Already have an account? <a href="{{ url_for('login') }}">Sign in</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const hInput = document.getElementById('height_cm');
+  const wInput = document.getElementById('weight_kg');
+  const preview = document.getElementById('bmi-preview');
+  function updateBmi() {
+    const h = parseFloat(hInput.value) / 100;
+    const w = parseFloat(wInput.value);
+    if (h > 0 && w > 0) {
+      const bmi = (w / (h * h)).toFixed(1);
+      let cat = bmi < 18.5 ? 'Underweight' : bmi < 25 ? 'Normal' : bmi < 30 ? 'Overweight' : 'Obese';
+      preview.textContent = `Calculated BMI: ${bmi} (${cat})`;
+    }
+  }
+  hInput.addEventListener('input', updateBmi);
+  wInput.addEventListener('input', updateBmi);
+  updateBmi();
+</script>
+{% endblock %}

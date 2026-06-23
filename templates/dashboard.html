@@ -1,0 +1,383 @@
+{% extends "base.html" %}
+{% block title %}Dashboard – OutfitRS{% endblock %}
+
+{% block head %}
+{% endblock %}
+
+{% block content %}
+<div class="container">
+  <div class="dash-grid">
+
+    <div>
+      <div class="card">
+        <div class="panel-title">Weather &amp; Context</div>
+        <div class="panel-body">
+
+          <div class="input-section">
+            <label>Fetch by city name</label>
+            <div class="weather-fetch">
+              <input id="city-input" type="text" placeholder="e.g. Hanoi, Tokyo…">
+              <button class="btn btn-outline btn-sm" onclick="fetchWeather()">Get</button>
+            </div>
+            <div class="weather-status" id="weather-status"></div>
+          </div>
+
+          <div class="input-section">
+            <label>Temperature (°C)</label>
+            <input id="inp-temp" type="number" value="28" step="0.1" min="-20" max="50">
+          </div>
+          <div class="input-row input-section">
+            <div>
+              <label>Humidity (%)</label>
+              <input id="inp-humidity" type="number" value="60" step="1" min="0" max="100">
+            </div>
+            <div>
+              <label>Wind (km/h)</label>
+              <input id="inp-wind" type="number" value="10" step="0.5" min="0" max="40">
+            </div>
+          </div>
+          <div class="input-section">
+            <label>Occasion</label>
+            <select id="inp-occasion">
+              {% for occ in occasions %}
+              <option value="{{ occ }}">{{ occ }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="mode-selector">
+            <button id="btn-ml" class="btn btn-primary btn-full" onclick="getRecommendations('ml')">
+              ML Mode
+            </button>
+            <button id="btn-cosine" class="btn btn-outline btn-full" onclick="getRecommendations('cosine')">
+              Cosine Mode
+            </button>
+          </div>
+
+          <div class="user-summary">
+            <div><strong>Username:</strong> {{ user.username }}</div>
+            <div><strong>BMI:</strong> {{ "%.2f"|format(user.bmi) }}</div>
+            <div><strong>Height:</strong> {{ user.height }} cm</div>
+            <div><strong>Weight:</strong> {{ user.weight }} kg</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="card">
+        <div class="panel-title">Recommended Outfits</div>
+        <div class="panel-body results-area" id="results-area">
+          <div class="status-msg">Enter your context and click <strong>Get Recommendations</strong>.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="xai-panel">
+      <div class="card">
+        <div class="panel-title">Math &amp; Explanation</div>
+        <div class="panel-body" id="xai-panel">
+          <div class="xai-empty">Select an outfit to see the computation details.</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentResults = [];
+let currentTrace   = {};
+let currentImportances = [];
+let selectedIdx = -1;
+let currentMode = 'ml';
+
+async function fetchWeather() {
+  const city = document.getElementById('city-input').value.trim();
+  if (!city) return;
+  const statusEl = document.getElementById('weather-status');
+  statusEl.className = 'weather-status';
+  statusEl.textContent = 'Fetching...';
+  try {
+    const resp = await fetch(`/api/weather?city=${encodeURIComponent(city)}`);
+    const data = await resp.json();
+    if (data.error) {
+      statusEl.className = 'weather-status error';
+      statusEl.textContent = data.error;
+      return;
+    }
+    document.getElementById('inp-temp').value     = data.temperature ?? '';
+    document.getElementById('inp-humidity').value = data.humidity    ?? '';
+    document.getElementById('inp-wind').value     = data.wind_speed  ?? '';
+    statusEl.textContent = `${data.city} - ${data.temperature}°C, Hum ${data.humidity}%, Wind ${data.wind_speed} km/h`;
+  } catch(e) {
+    statusEl.className = 'weather-status error';
+    statusEl.textContent = 'Network error: ' + e.message;
+  }
+}
+
+function updateButtonStates(activeMode) {
+  const btnMl = document.getElementById('btn-ml');
+  const btnCosine = document.getElementById('btn-cosine');
+  if (activeMode === 'ml') {
+    btnMl.className = 'btn btn-primary btn-full';
+    btnCosine.className = 'btn btn-outline btn-full';
+  } else {
+    btnMl.className = 'btn btn-outline btn-full';
+    btnCosine.className = 'btn btn-primary btn-full';
+  }
+}
+
+async function getRecommendations(mode = 'ml') {
+  currentMode = mode;
+  updateButtonStates(mode);
+
+  const area = document.getElementById('results-area');
+  area.innerHTML = '<div class="status-msg"><span class="spinner"></span> Computing...</div>';
+  document.getElementById('xai-panel').innerHTML =
+    '<div class="xai-empty">Select an outfit to see the computation details.</div>';
+  selectedIdx = -1;
+
+  const payload = {
+    temperature: parseFloat(document.getElementById('inp-temp').value),
+    humidity:    parseFloat(document.getElementById('inp-humidity').value),
+    wind_speed:  parseFloat(document.getElementById('inp-wind').value),
+    occasion:    document.getElementById('inp-occasion').value,
+    mode:        mode
+  };
+
+  try {
+    const resp = await fetch('/api/recommend', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload),
+    });
+    const data = await resp.json();
+
+    if (data.error) {
+      area.innerHTML = `<div class="status-msg error">${data.error}</div>`;
+      return;
+    }
+
+    currentResults      = data.results     || [];
+    currentTrace        = data.math_trace  || {};
+    currentImportances  = data.feature_importances || [];
+
+    if (!currentResults.length) {
+      area.innerHTML = `<div class="status-msg">${data.message || 'No matching outfits found.'}</div>`;
+      return;
+    }
+
+    renderResults();
+    selectOutfit(0);
+
+  } catch(e) {
+    area.innerHTML = `<div class="status-msg error">Error: ${e.message}</div>`;
+  }
+}
+
+function renderResults() {
+  const area = document.getElementById('results-area');
+  area.innerHTML = currentResults.map((outfit, i) => `
+    <div class="outfit-card" id="outfit-card-${i}" onclick="selectOutfit(${i})">
+      <div class="outfit-card-header">
+        <span class="outfit-rank">#${i+1}</span>
+        <span class="outfit-score" title="${currentMode === 'ml' ? 'ML Match Score' : 'Cosine Similarity Match Score'}">${outfit.ml_score.toFixed(1)}%</span>
+      </div>
+      <div class="outfit-card-body">
+        <div class="outfit-items">
+          ${outfit.items.map(it =>
+            `<span class="outfit-item-chip">${it.name}</span>`
+          ).join('')}
+        </div>
+        <div class="outfit-stats">
+          <span>Total Clo: <strong>${outfit.total_clo.toFixed(3)}</strong></span>
+          <span>Omega Struct: <strong>${outfit.omega_structure.toFixed(2)}</strong></span>
+          <span>Ratio OK: <strong>${outfit.omega_ratio === 1 ? 'Yes' : 'No'}</strong></span>
+          <span>Affinity: <strong>${(outfit.affinity_score*100).toFixed(0)}%</strong></span>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function selectOutfit(idx) {
+  if (selectedIdx >= 0) {
+    document.getElementById(`outfit-card-${selectedIdx}`)?.classList.remove('selected');
+  }
+  selectedIdx = idx;
+  document.getElementById(`outfit-card-${idx}`)?.classList.add('selected');
+
+  const outfit = currentResults[idx];
+  const trace  = currentTrace;
+  const xai = document.getElementById('xai-panel');
+
+  const mathRows = [
+    ['T_weather', `${trace.t_weather} °C`],
+    ['BMI',       `${trace.bmi.toFixed(2)}`],
+    ['K',         `${trace.k_coeff}`],
+    ['T_adj = T + (BMI-21.7)*K', `${trace.t_adj} °C`],
+    ['Ideal_Clo = (24.1-T_adj)/8 + 0.5', `${trace.ideal_clo}`],
+    ['Occasion',  trace.occasion],
+    ['H_target = (H-20)/80', `${trace.h_target}`],
+    ['W_target = Wind/40',   `${trace.w_target}`],
+    ['F_target (formality)', `${trace.f_target}`],
+  ];
+
+  const idealClo = parseFloat(trace.ideal_clo);
+  const idealTop = idealClo * 0.6;
+  const idealBottom = idealClo * 0.4;
+  const hTarget = parseFloat(trace.h_target);
+  const wTarget = parseFloat(trace.w_target);
+  const fTarget = parseFloat(trace.f_target);
+
+  const vu = [idealTop, idealBottom, 1.0, hTarget, wTarget, fTarget];
+  const vs = [
+    outfit.clo_top,
+    outfit.clo_bottom,
+    outfit.omega_structure,
+    outfit.h_outfit,
+    outfit.w_outfit,
+    outfit.f_outfit
+  ];
+
+  const dot = vu.reduce((sum, val, i) => sum + val * vs[i], 0);
+  const magU = Math.sqrt(vu.reduce((sum, val) => sum + val * val, 0));
+  const magS = Math.sqrt(vs.reduce((sum, val) => sum + val * val, 0));
+  const sim = (magU === 0 || magS === 0) ? 0 : (dot / (magU * magS)) * 100;
+
+  if (currentMode === 'cosine') {
+    mathRows.push(
+      ['Ideal_Top = Ideal_Clo * 0.6', `${idealTop.toFixed(3)}`],
+      ['Ideal_Bottom = Ideal_Clo * 0.4', `${idealBottom.toFixed(3)}`],
+      ['V_user [Ideal_Top, Ideal_Bot, 1.0, H_tgt, W_tgt, F_tgt]', `[${vu.map(x => x.toFixed(2)).join(', ')}]`],
+      ['V_outfit [Clo_top, Clo_bot, Omega_str, H_out, W_out, F_out]', `[${vs.map(x => x.toFixed(2)).join(', ')}]`],
+      ['Dot Product (V_user * V_outfit)', `${dot.toFixed(4)}`],
+      ['|V_user| (norm)', `${magU.toFixed(4)}`],
+      ['|V_outfit| (norm)', `${magS.toFixed(4)}`],
+      ['Cos Sim = Dot / (|V_u|*|V_s|)', `${sim.toFixed(2)}%`]
+    );
+  }
+
+  const cloRatioPct = outfit.total_clo > 0
+    ? ((outfit.clo_bottom / outfit.total_clo)*100).toFixed(1)
+    : '0.0';
+  const ratioPass  = outfit.omega_ratio === 1;
+  const structPass = outfit.omega_structure >= 0.90;
+
+  const itemTraceRows = outfit.item_traces.map(it => `
+    <tr class="item-trace-row">
+      <td>${it.name}</td>
+      <td>${it.category}</td>
+      <td>${it.clo.toFixed(3)}</td>
+      <td>${it.W_j.toFixed(4)}</td>
+      <td>${it.H_j.toFixed(4)}</td>
+      <td>${it.F_j.toFixed(4)}</td>
+    </tr>
+  `).join('');
+
+  const maxImp = currentImportances.length ? Math.max(...currentImportances.map(f => f.importance)) : 100;
+  const importanceBars = currentImportances.map(f => `
+    <div class="importance-row">
+      <span class="importance-label" title="${f.name}">${f.name}</span>
+      <div class="importance-bar-bg">
+        <div class="importance-bar" style="width:${(f.importance/maxImp*100).toFixed(1)}%"></div>
+      </div>
+      <span class="importance-pct">${f.importance.toFixed(1)}%</span>
+    </div>
+  `).join('');
+
+  xai.innerHTML = `
+    <div class="xai-section">
+      <div class="xai-section-title">${currentMode === 'ml' ? 'ML Match Score' : 'Cosine Match Score'}</div>
+      <div class="score-display">${outfit.ml_score.toFixed(2)}%</div>
+      <div class="text-muted-small">${currentMode === 'ml' ? `Style affinity contribution: ${(outfit.affinity_score*100).toFixed(0)}%` : `Style affinity: ${(outfit.affinity_score*100).toFixed(0)}% (not added in pure Cosine similarity)`}</div>
+    </div>
+
+    <div class="xai-section">
+      <div class="xai-section-title">Rule-Based Checks</div>
+      <div class="constraint-row">
+        <span class="check-icon ${ratioPass ? 'pass' : 'warn'}">${ratioPass ? 'Yes' : 'No'}</span>
+        <span>Clo Ratio: Bottom = <strong>${cloRatioPct}%</strong> of total (need >= 20%)</span>
+      </div>
+      <div class="constraint-row">
+        <span class="check-icon ${structPass ? 'pass' : 'warn'}">${structPass ? 'Yes' : 'No'}</span>
+        <span>Structural Score Omega = <strong>${outfit.omega_structure.toFixed(2)}</strong>
+          (${outfit.omega_structure >= 1.0 ? 'Complete' : 'Minor deficiency - wearable'})</span>
+      </div>
+    </div>
+
+    <div class="xai-section">
+      <div class="xai-section-title">Computation Steps</div>
+      <table class="math-table">
+        ${mathRows.map(([k,v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join('')}
+        <tr><td>Clo_top</td><td>${outfit.clo_top.toFixed(3)}</td></tr>
+        <tr><td>Clo_bottom</td><td>${outfit.clo_bottom.toFixed(3)}</td></tr>
+        <tr><td>W_outfit = max(W_j)</td><td>${outfit.w_outfit.toFixed(4)}</td></tr>
+        <tr><td>H_outfit = min(H_j)</td><td>${outfit.h_outfit.toFixed(4)}</td></tr>
+        <tr><td>F_outfit = min(F_j)</td><td>${outfit.f_outfit.toFixed(4)}</td></tr>
+      </table>
+    </div>
+
+    <div class="xai-section">
+      <div class="xai-section-title">Per-Item Attributes</div>
+      <table class="item-table">
+        <thead>
+          <tr>
+            <th>Item</th>
+            <th>Cat.</th>
+            <th>Clo</th>
+            <th>W_j</th>
+            <th>H_j</th>
+            <th>F_j</th>
+          </tr>
+        </thead>
+        <tbody>${itemTraceRows}</tbody>
+      </table>
+    </div>
+
+    ${currentImportances.length ? `
+    <div class="xai-section">
+      <div class="xai-section-title">${currentMode === 'ml' ? 'Feature Contributions (ML Model)' : 'Static Formula Weights (Cosine Fallback)'}</div>
+      ${importanceBars}
+    </div>
+    ` : ''}
+  `;
+
+  logInteraction(outfit, 1);
+
+  currentResults.forEach((otherOutfit, i) => {
+    if (i !== idx) {
+      logInteraction(otherOutfit, 0);
+    }
+  });
+}
+
+function logInteraction(outfit, label) {
+  const trace = currentTrace;
+  const features = {
+    bmi:             trace.bmi,
+    t_adj:           trace.t_adj,
+    humidity:        parseFloat(document.getElementById('inp-humidity').value),
+    wind_speed:      parseFloat(document.getElementById('inp-wind').value),
+    f_target:        trace.f_target,
+    w_outfit:        outfit.w_outfit,
+    h_outfit:        outfit.h_outfit,
+    f_outfit:        outfit.f_outfit,
+    total_clo:       outfit.total_clo,
+    omega_structure: outfit.omega_structure,
+  };
+  fetch('/api/interact', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ signature: outfit.signature, label, features }),
+  }).catch(() => {});
+}
+
+document.getElementById('city-input')?.addEventListener('keydown', e => {
+  if (e.key === 'Enter') fetchWeather();
+});
+</script>
+{% endblock %}
